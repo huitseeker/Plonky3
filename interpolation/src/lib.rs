@@ -126,6 +126,53 @@ where
     evals
 }
 
+/// Performs Lagrange interpolation over arbitrary points in the base field,
+/// evaluating at a point in the extension field.
+///
+/// Given `n` points `(xs[i], ys[i])` where `xs[i]` are in the base field `F`
+/// and `ys[i]` are in the extension field `EF`, computes the unique polynomial
+/// of degree < n that passes through these points, evaluated at `point` in `EF`.
+///
+/// This is optimized to keep denominators in the base field `F`, only doing
+/// extension field operations where necessary.
+pub fn lagrange_interpolate_ext<F, EF>(xs: &[F], ys: &[EF], point: EF) -> EF
+where
+    F: TwoAdicField,
+    EF: ExtensionField<F>,
+{
+    let n = xs.len();
+    debug_assert_eq!(xs.len(), ys.len(), "xs and ys must have the same length");
+
+    let mut numerators = Vec::with_capacity(n);
+    let mut denominators = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let mut numerator = EF::ONE;
+        let mut denominator = F::ONE;
+
+        for j in 0..n {
+            if i != j {
+                numerator *= point - xs[j]; // Numerator: (point - xs[j]) in EF
+                denominator *= xs[i] - xs[j]; // Denominator: (xs[i] - xs[j]) in F
+            }
+        }
+
+        numerators.push(numerator);
+        denominators.push(denominator);
+    }
+
+    // Batch invert all denominators
+    let inv_denominators = batch_multiplicative_inverse(&denominators);
+
+    // Compute the final result: sum of ys[i] * numerator[i] / denominator[i]
+    let mut result = EF::ZERO;
+    for i in 0..n {
+        result += ys[i] * numerators[i] * inv_denominators[i];
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::vec;
@@ -137,7 +184,10 @@ mod tests {
     use p3_matrix::dense::RowMajorMatrix;
     use p3_util::log2_strict_usize;
 
-    use crate::{interpolate_coset, interpolate_coset_with_precomputation, interpolate_subgroup};
+    use crate::{
+        interpolate_coset, interpolate_coset_with_precomputation, interpolate_subgroup,
+        lagrange_interpolate_ext,
+    };
 
     #[test]
     fn test_interpolate_subgroup() {

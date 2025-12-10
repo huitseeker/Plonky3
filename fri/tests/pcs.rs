@@ -183,6 +183,7 @@ mod babybear_fri_pcs {
             commit_proof_of_work_bits: 0,
             query_proof_of_work_bits: 8,
             mmcs: challenge_mmcs,
+            log_folding_factor: 1,
         };
 
         let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
@@ -237,6 +238,7 @@ mod m31_fri_pcs {
             commit_proof_of_work_bits: 0,
             query_proof_of_work_bits: 8,
             mmcs: challenge_mmcs,
+            log_folding_factor: 1,
         };
         let pcs = Pcs {
             mmcs: val_mmcs,
