@@ -177,8 +177,9 @@ where
     while folded.len() > params.blowup() * params.final_poly_len() {
         // As folded is in bit reversed order, it looks like:
         //      `[f_i(h^0), f_i(h^{N/2}), f_i(h^{N/4}), f_i(h^{3N/4}), ...] = [f_i(1), f_i(-1), f_i(h^{N/4}), f_i(-h^{N/4}), ...]`
-        // so the relevant evaluations are adjacent and we can just reinterpret the vector as a matrix of width 2.
-        let leaves = RowMajorMatrix::new(folded, 2);
+        // so the relevant evaluations are adjacent and we can just reinterpret the vector as a matrix with width = folding_factor.
+        let folding_factor = 1 << folding.log_folding_factor();
+        let leaves = RowMajorMatrix::new(folded, folding_factor);
 
         // Commit to these evaluations and observe the commitment.
         let (commit, prover_data) = params.mmcs.commit_matrix(leaves);
