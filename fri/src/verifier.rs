@@ -1,5 +1,4 @@
 use alloc::collections::btree_map::BTreeMap;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use itertools::Itertools;
@@ -51,10 +50,10 @@ type FriOpenings<F> = Vec<(usize, F)>;
 /// - `challenger`: The Fiat-Shamir challenger.
 /// - `commitments_with_opening_points`: A vector of joint commitments to collections of matrices
 ///   and openings of those matrices at a collection of points.
-pub fn verify_fri<Folding, Val, Challenge, InputMmcs, FriMmcs, Challenger>(
+pub fn verify_fri<Folding, Val, Challenge, InputMmcs, FriMmcs, Challenger, const NUM_SIBLINGS: usize>(
     folding: &Folding,
-    params: &FriParameters<FriMmcs>,
-    proof: &FriProof<Challenge, FriMmcs, Challenger::Witness, Folding::InputProof>,
+    params: &FriParameters<FriMmcs, NUM_SIBLINGS>,
+    proof: &FriProof<Challenge, FriMmcs, Challenger::Witness, Folding::InputProof, NUM_SIBLINGS>,
     challenger: &mut Challenger,
     commitments_with_opening_points: &[CommitmentWithOpeningPoints<
         Challenge,
@@ -83,11 +82,13 @@ where
     // (i.e counting the number (point, claimed_evaluation) pairs).
     let alpha: Challenge = challenger.sample_algebra_element();
 
-    // `commit_phase_commits.len()` is the number of folding steps, so the maximum polynomial degree will be
-    // `commit_phase_commits.len() + self.fri.log_final_poly_len` and so, as the same blow-up is used for all
-    // polynomials, the maximum matrix height over all commit batches is:
-    let log_global_max_height =
-        proof.commit_phase_commits.len() + params.log_blowup + params.log_final_poly_len;
+    // `commit_phase_commits.len()` is the number of folding steps, and each step reduces the domain
+    // by a factor of `folding_factor`, so the maximum polynomial degree will be
+    // `commit_phase_commits.len() * log_folding_factor + self.fri.log_final_poly_len` and so,
+    // as the same blow-up is used for all polynomials, the maximum matrix height over all commit batches is:
+    let log_global_max_height = proof.commit_phase_commits.len() * folding.log_folding_factor()
+        + params.log_blowup
+        + params.log_final_poly_len;
 
     if proof.commit_pow_witnesses.len() != proof.commit_phase_commits.len() {
         return Err(FriError::InvalidProofShape);
@@ -203,12 +204,12 @@ where
     Ok(())
 }
 
-type CommitStep<'a, F, M> = (
+type CommitStep<'a, F, M, const NUM_SIBLINGS: usize> = (
     (
         &'a F, // The challenge point beta used for the next fold of FRI evaluations.
         &'a <M as Mmcs<F>>::Commitment, // A commitment to the FRI evaluations on the current domain.
     ),
-    &'a CommitPhaseProofStep<F, M>, // The sibling and opening proof for the current FRI node.
+    &'a CommitPhaseProofStep<F, M, NUM_SIBLINGS>, // The sibling and opening proof for the current FRI node.
 );
 
 /// Verifies a single query chain in the FRI proof. This is the verifier complement
@@ -233,11 +234,11 @@ type CommitStep<'a, F, M> = (
 /// - `log_global_max_height`: The log of the maximum domain size.
 /// - `log_final_height`: The log of the final domain size.
 #[inline]
-fn verify_query<'a, Folding, F, EF, M>(
+fn verify_query<'a, Folding, F, EF, M, const NUM_SIBLINGS: usize>(
     folding: &Folding,
-    params: &FriParameters<M>,
+    params: &FriParameters<M, NUM_SIBLINGS>,
     start_index: &mut usize,
-    fold_data_iter: impl ExactSizeIterator<Item = CommitStep<'a, EF, M>>,
+    fold_data_iter: impl ExactSizeIterator<Item = CommitStep<'a, EF, M, NUM_SIBLINGS>>,
     reduced_openings: FriOpenings<EF>,
     log_global_max_height: usize,
     log_final_height: usize,
@@ -259,41 +260,63 @@ where
     }
     let mut folded_eval = ro_iter.next().unwrap().1;
 
+    let log_folding_factor = folding.log_folding_factor();
+    let folding_factor = 1 << log_folding_factor;
+
     // We start with evaluations over a domain of size (1 << log_global_max_height). We fold
     // using FRI until the domain size reaches (1 << log_final_height).
-    for (log_folded_height, ((&beta, comm), opening)) in zip_eq(
-        // zip_eq ensures that we have the right number of steps.
-        (log_final_height..log_global_max_height).rev(),
+    // Each iteration reduces the domain by a factor of folding_factor.
+    let num_fold_steps = (log_global_max_height - log_final_height) / log_folding_factor;
+
+    for (fold_step, ((&beta, comm), opening)) in zip_eq(
+        0..num_fold_steps,
         fold_data_iter,
         FriError::InvalidProofShape,
     )? {
-        // Get the index of the other sibling of the current FRI node.
-        let index_sibling = *start_index ^ 1;
+        let log_folded_height = log_global_max_height - (fold_step + 1) * log_folding_factor;
 
-        let mut evals = vec![folded_eval; 2];
-        evals[index_sibling % 2] = opening.sibling_value;
+        // Get the index within the current folding group
+        let index_in_group = *start_index % folding_factor;
+
+        // Reconstruct all evaluations in the folding group.
+        // We have folded_eval at index_in_group, and sibling_values for all other positions.
+        let mut evals = Vec::with_capacity(folding_factor);
+        let mut sibling_iter = opening.sibling_values.iter();
+        for i in 0..folding_factor {
+            if i == index_in_group {
+                evals.push(folded_eval);
+            } else {
+                evals.push(*sibling_iter.next().ok_or(FriError::InvalidProofShape)?);
+            }
+        }
+
+        // Ensure all siblings were consumed
+        if sibling_iter.next().is_some() {
+            return Err(FriError::InvalidProofShape);
+        }
 
         let dims = &[Dimensions {
-            width: 2,
+            width: folding_factor,
             height: 1 << log_folded_height,
         }];
 
         // Replace index with the index of the parent FRI node.
-        *start_index >>= 1;
+        let group_index = *start_index >> log_folding_factor;
+        *start_index = group_index;
 
-        // Verify the commitment to the evaluations of the sibling nodes.
+        // Verify the commitment to the evaluations of all nodes in the folding group.
         params
             .mmcs
             .verify_batch(
                 comm,
                 dims,
-                *start_index,
+                group_index,
                 BatchOpeningRef::new(&[evals.clone()], &opening.opening_proof), // It's possible to remove the clone here but unnecessary as evals is tiny.
             )
             .map_err(FriError::CommitPhaseMmcsError)?;
 
-        // Fold the pair of sibling nodes to get the evaluation of the parent FRI node.
-        folded_eval = folding.fold_row(*start_index, log_folded_height, beta, evals.into_iter());
+        // Fold the group of sibling nodes to get the evaluation of the parent FRI node.
+        folded_eval = folding.fold_row(group_index, log_folded_height, beta, evals.into_iter());
 
         // If there are new polynomials to roll in at the folded height, do so.
         //
@@ -340,8 +363,8 @@ where
 /// - `commitments_with_opening_points`: A vector of joint commitments to collections of matrices
 ///   and openings of those matrices at a collection of points.
 #[inline]
-fn open_input<Val, Challenge, InputMmcs, FriMmcs>(
-    params: &FriParameters<FriMmcs>,
+fn open_input<Val, Challenge, InputMmcs, FriMmcs, const NUM_SIBLINGS: usize>(
+    params: &FriParameters<FriMmcs, NUM_SIBLINGS>,
     log_global_max_height: usize,
     index: usize,
     input_proof: &[BatchOpening<Val, InputMmcs>],

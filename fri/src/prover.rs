@@ -40,9 +40,9 @@ use crate::{
 /// - `prover_data_with_opening_points`: A list of pairs of a batch commitment to a collection
 ///   of matrices and a list of points to open those matrices at.
 #[instrument(name = "FRI prover", skip_all)]
-pub fn prove_fri<Folding, Val, Challenge, InputMmcs, FriMmcs, Challenger>(
+pub fn prove_fri<Folding, Val, Challenge, InputMmcs, FriMmcs, Challenger, const NUM_SIBLINGS: usize>(
     folding: &Folding,
-    params: &FriParameters<FriMmcs>,
+    params: &FriParameters<FriMmcs, NUM_SIBLINGS>,
     inputs: Vec<Vec<Challenge>>,
     challenger: &mut Challenger,
     log_global_max_height: usize,
@@ -52,7 +52,7 @@ pub fn prove_fri<Folding, Val, Challenge, InputMmcs, FriMmcs, Challenger>(
         InputMmcs::ProverData<RowMajorMatrix<Val>>,
     >],
     input_mmcs: &InputMmcs,
-) -> FriProof<Challenge, FriMmcs, Challenger::Witness, Folding::InputProof>
+) -> FriProof<Challenge, FriMmcs, Challenger::Witness, Folding::InputProof, NUM_SIBLINGS>
 where
     Val: TwoAdicField,
     Challenge: ExtensionField<Val>,
@@ -155,9 +155,9 @@ struct CommitPhaseResult<F: Field, M: Mmcs<F>, Witness> {
 ///   have already been produced and observed by the challenger.
 /// - `challenger`: The Fiat-Shamir challenger to use for sampling challenges.
 #[instrument(name = "commit phase", skip_all)]
-fn commit_phase<Folding, Val, Challenge, M, Challenger>(
+fn commit_phase<Folding, Val, Challenge, M, Challenger, const NUM_SIBLINGS: usize>(
     folding: &Folding,
-    params: &FriParameters<M>,
+    params: &FriParameters<M, NUM_SIBLINGS>,
     inputs: Vec<Vec<Challenge>>,
     challenger: &mut Challenger,
 ) -> CommitPhaseResult<Challenge, M, <Challenger as GrindingChallenger>::Witness>
@@ -249,38 +249,65 @@ where
 /// - `start_index`: The opening index for the unfolded polynomial. For folded polynomials,
 ///   we use this index right shifted by the number of folds.
 #[inline]
-fn answer_query<F, M>(
-    config: &FriParameters<M>,
+fn answer_query<F, M, const NUM_SIBLINGS: usize>(
+    config: &FriParameters<M, NUM_SIBLINGS>,
     folded_polynomial_commits: &[M::ProverData<RowMajorMatrix<F>>],
     start_index: usize,
-) -> Vec<CommitPhaseProofStep<F, M>>
+) -> Vec<CommitPhaseProofStep<F, M, NUM_SIBLINGS>>
 where
     F: Field,
     M: Mmcs<F>,
 {
+    let log_folding_factor = config.log_folding_factor;
+    let folding_factor = config.folding_factor();
+
     folded_polynomial_commits
         .iter()
         .enumerate()
         .map(|(i, commit)| {
-            // After i folding rounds, the current index we are looking at is `index >> i`.
-            let index_i = start_index >> i;
-            let index_i_sibling = index_i ^ 1;
-            let index_pair = index_i >> 1;
+            // After i folding rounds, the current index we are looking at is `index >> (i * log_folding_factor)`.
+            let index_i = start_index >> (i * log_folding_factor);
+            // Get the index within the folding group
+            let index_in_group = index_i % folding_factor;
+            // Get the index of the folding group (row in the committed matrix)
+            let group_index = index_i >> log_folding_factor;
 
-            // Get a proof that the pair of indices are correct.
+            // Get a proof that the entire row (all siblings in the folding group) is correct.
             let (mut opened_rows, opening_proof) =
-                config.mmcs.open_batch(index_pair, commit).unpack();
+                config.mmcs.open_batch(group_index, commit).unpack();
 
-            // opened_rows should contain just the value at index_i and its sibling.
-            // We just need to get the sibling.
+            // opened_rows should contain just the row at group_index.
             assert_eq!(opened_rows.len(), 1);
-            let opened_row = &opened_rows.pop().unwrap();
-            assert_eq!(opened_row.len(), 2, "Committed data should be in pairs");
-            let sibling_value = opened_row[index_i_sibling % 2];
+            let opened_row = opened_rows.pop().unwrap();
+            assert_eq!(
+                opened_row.len(),
+                folding_factor,
+                "Committed data should have width equal to folding factor"
+            );
 
-            // Add the sibling and the proof to the vector.
+            // We need to send all values in the row EXCEPT the one at index_in_group,
+            // since the verifier already knows that value (it's the folded evaluation from the previous round).
+            // Collect siblings into fixed-size array.
+            let siblings_vec: Vec<F> = opened_row
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, val)| {
+                    if idx != index_in_group {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Convert Vec to fixed-size array
+            assert_eq!(siblings_vec.len(), NUM_SIBLINGS,
+                       "Expected {} siblings, got {}", NUM_SIBLINGS, siblings_vec.len());
+            let sibling_values: [F; NUM_SIBLINGS] = siblings_vec.try_into()
+                .expect("sibling_values length should equal NUM_SIBLINGS");
+
             CommitPhaseProofStep {
-                sibling_value,
+                sibling_values,
                 opening_proof,
             }
         })

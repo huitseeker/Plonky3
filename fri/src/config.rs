@@ -5,8 +5,14 @@ use p3_field::{ExtensionField, Field};
 use p3_matrix::Matrix;
 
 /// A set of parameters defining a specific instance of the FRI protocol.
+///
+/// The const generic NUM_SIBLINGS specifies the number of sibling values in query proofs:
+/// - NUM_SIBLINGS = 1 (default) corresponds to arity-2 folding (log_folding_factor = 1)
+/// - NUM_SIBLINGS = 3 corresponds to arity-4 folding (log_folding_factor = 2)
+/// - NUM_SIBLINGS = 7 corresponds to arity-8 folding (log_folding_factor = 3)
+/// - In general: NUM_SIBLINGS = 2^log_folding_factor - 1
 #[derive(Debug)]
-pub struct FriParameters<M> {
+pub struct FriParameters<M, const NUM_SIBLINGS: usize = 1> {
     pub log_blowup: usize,
     // TODO: This parameter and FRI early stopping are not yet implemented in `CirclePcs`.
     /// Log of the size of the final polynomial.
@@ -19,11 +25,12 @@ pub struct FriParameters<M> {
     /// Number of bits for the PoW phase before sampling the queries.
     pub query_proof_of_work_bits: usize,
     pub mmcs: M,
-    /// Log of the folding factor (arity). Must be >= 1.
+    /// Log of the folding factor (arity). Stored as runtime value for calculations.
+    /// Must satisfy: 2^log_folding_factor - 1 == NUM_SIBLINGS
     pub log_folding_factor: usize,
 }
 
-impl<M> FriParameters<M> {
+impl<M, const NUM_SIBLINGS: usize> FriParameters<M, NUM_SIBLINGS> {
     pub const fn blowup(&self) -> usize {
         1 << self.log_blowup
     }
@@ -77,10 +84,11 @@ pub trait FriFoldingStrategy<F: Field, EF: ExtensionField<F>> {
 
 /// Creates a minimal set of `FriParameters` for testing purposes.
 /// These parameters are designed to reduce computational cost during tests.
+/// Uses default arity-2 folding (NUM_SIBLINGS = 1).
 pub const fn create_test_fri_params<Mmcs>(
     mmcs: Mmcs,
     log_final_poly_len: usize,
-) -> FriParameters<Mmcs> {
+) -> FriParameters<Mmcs, 1> {
     FriParameters {
         log_blowup: 2,
         log_final_poly_len,
@@ -94,7 +102,8 @@ pub const fn create_test_fri_params<Mmcs>(
 
 /// Creates a minimal set of `FriParameters` for testing purposes, with zk enabled.
 /// These parameters are designed to reduce computational cost during tests.
-pub const fn create_test_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs> {
+/// Uses default arity-2 folding (NUM_SIBLINGS = 1).
+pub const fn create_test_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs, 1> {
     FriParameters {
         log_blowup: 2,
         log_final_poly_len: 0,
@@ -108,7 +117,8 @@ pub const fn create_test_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs> 
 
 /// Creates a set of `FriParameters` suitable for benchmarking.
 /// These parameters represent typical settings used in production-like scenarios.
-pub const fn create_benchmark_fri_params<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs> {
+/// Uses default arity-2 folding (NUM_SIBLINGS = 1).
+pub const fn create_benchmark_fri_params<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs, 1> {
     FriParameters {
         log_blowup: 1,
         log_final_poly_len: 0,
@@ -122,7 +132,8 @@ pub const fn create_benchmark_fri_params<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs
 
 /// Creates a set of `FriParameters` suitable for benchmarking with zk enabled.
 /// These parameters represent typical settings used in production-like scenarios.
-pub const fn create_benchmark_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs> {
+/// Uses default arity-2 folding (NUM_SIBLINGS = 1).
+pub const fn create_benchmark_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs, 1> {
     FriParameters {
         log_blowup: 2,
         log_final_poly_len: 0,
@@ -133,3 +144,16 @@ pub const fn create_benchmark_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<M
         log_folding_factor: 1,
     }
 }
+
+// ============================================================================
+// Type aliases for common folding arities
+// ============================================================================
+
+/// Arity-2 FRI parameters (default, 1 sibling per fold)
+pub type FriParameters2<M> = FriParameters<M, 1>;
+
+/// Arity-4 FRI parameters (3 siblings per fold)
+pub type FriParameters4<M> = FriParameters<M, 3>;
+
+/// Arity-8 FRI parameters (7 siblings per fold)
+pub type FriParameters8<M> = FriParameters<M, 7>;

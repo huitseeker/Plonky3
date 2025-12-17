@@ -255,3 +255,150 @@ mod m31_fri_pcs {
         make_tests_for_pcs!(super::get_pcs(2));
     }
 }
+
+/// Test FRI PCS with arity 2 (default folding factor)
+#[test]
+fn test_fri_pcs_flexible_folding_arity2() {
+    use p3_baby_bear::{BabyBear, Poseidon2BabyBear};
+    use p3_challenger::DuplexChallenger;
+    use p3_commit::ExtensionMmcs;
+    use p3_dft::Radix2DitParallel;
+    use p3_field::extension::BinomialExtensionField;
+    use p3_field::Field;
+    use p3_fri::{FriParameters, TwoAdicFriPcs};
+    use p3_merkle_tree::MerkleTreeMmcs;
+    use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
+
+    type Val = BabyBear;
+    type Challenge = BinomialExtensionField<Val, 4>;
+    type Perm = Poseidon2BabyBear<16>;
+    type MyHash = PaddingFreeSponge<Perm, 16, 8, 8>;
+    type MyCompress = TruncatedPermutation<Perm, 2, 8, 16>;
+    type ValMmcs =
+        MerkleTreeMmcs<<Val as Field>::Packing, <Val as Field>::Packing, MyHash, MyCompress, 8>;
+    type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
+    type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
+    type Dft = Radix2DitParallel<Val>;
+    type MyPcs = TwoAdicFriPcs<Val, Dft, ValMmcs, ChallengeMmcs, 1>;
+
+    let mut rng = seeded_rng();
+    let perm = Perm::new_from_rng_128(&mut rng);
+    let hash = MyHash::new(perm.clone());
+    let compress = MyCompress::new(perm.clone());
+    let val_mmcs = ValMmcs::new(hash.clone(), compress.clone());
+    let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
+
+    let fri_params = FriParameters {
+        log_blowup: 1,
+        log_final_poly_len: 0,
+        num_queries: 10,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 8,
+        mmcs: challenge_mmcs,
+        log_folding_factor: 1,
+    };
+
+    let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
+    let challenger = Challenger::new(perm);
+
+    println!("Testing FRI with arity 2");
+    do_test_fri_pcs(&(pcs, challenger), &[&[8]]);
+}
+
+/// Test FRI PCS with arity 4 (folding factor 4)
+#[test]
+fn test_fri_pcs_flexible_folding_arity4() {
+    use p3_baby_bear::{BabyBear, Poseidon2BabyBear};
+    use p3_challenger::DuplexChallenger;
+    use p3_commit::ExtensionMmcs;
+    use p3_dft::Radix2DitParallel;
+    use p3_field::extension::BinomialExtensionField;
+    use p3_field::Field;
+    use p3_fri::{FriParameters, TwoAdicFriPcs};
+    use p3_merkle_tree::MerkleTreeMmcs;
+    use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
+
+    type Val = BabyBear;
+    type Challenge = BinomialExtensionField<Val, 4>;
+    type Perm = Poseidon2BabyBear<16>;
+    type MyHash = PaddingFreeSponge<Perm, 16, 8, 8>;
+    type MyCompress = TruncatedPermutation<Perm, 2, 8, 16>;
+    type ValMmcs =
+        MerkleTreeMmcs<<Val as Field>::Packing, <Val as Field>::Packing, MyHash, MyCompress, 8>;
+    type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
+    type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
+    type Dft = Radix2DitParallel<Val>;
+    type MyPcs = TwoAdicFriPcs<Val, Dft, ValMmcs, ChallengeMmcs, 3>;
+
+    let mut rng = seeded_rng();
+    let perm = Perm::new_from_rng_128(&mut rng);
+    let hash = MyHash::new(perm.clone());
+    let compress = MyCompress::new(perm.clone());
+    let val_mmcs = ValMmcs::new(hash.clone(), compress.clone());
+    let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
+
+    let fri_params = FriParameters {
+        log_blowup: 1,
+        log_final_poly_len: 0,
+        num_queries: 10,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 8,
+        mmcs: challenge_mmcs,
+        log_folding_factor: 2,
+    };
+
+    let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
+    let challenger = Challenger::new(perm);
+
+    println!("Testing FRI with arity 4");
+    do_test_fri_pcs(&(pcs, challenger), &[&[8]]);
+}
+
+/// Test FRI PCS with arity 8 (folding factor 8)
+#[test]
+fn test_fri_pcs_flexible_folding_arity8() {
+    use p3_baby_bear::{BabyBear, Poseidon2BabyBear};
+    use p3_challenger::DuplexChallenger;
+    use p3_commit::ExtensionMmcs;
+    use p3_dft::Radix2DitParallel;
+    use p3_field::extension::BinomialExtensionField;
+    use p3_field::Field;
+    use p3_fri::{FriParameters, TwoAdicFriPcs};
+    use p3_merkle_tree::MerkleTreeMmcs;
+    use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
+
+    type Val = BabyBear;
+    type Challenge = BinomialExtensionField<Val, 4>;
+    type Perm = Poseidon2BabyBear<16>;
+    type MyHash = PaddingFreeSponge<Perm, 16, 8, 8>;
+    type MyCompress = TruncatedPermutation<Perm, 2, 8, 16>;
+    type ValMmcs =
+        MerkleTreeMmcs<<Val as Field>::Packing, <Val as Field>::Packing, MyHash, MyCompress, 8>;
+    type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
+    type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
+    type Dft = Radix2DitParallel<Val>;
+    type MyPcs = TwoAdicFriPcs<Val, Dft, ValMmcs, ChallengeMmcs, 7>;
+
+    let mut rng = seeded_rng();
+    let perm = Perm::new_from_rng_128(&mut rng);
+    let hash = MyHash::new(perm.clone());
+    let compress = MyCompress::new(perm.clone());
+    let val_mmcs = ValMmcs::new(hash.clone(), compress.clone());
+    let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
+
+    let fri_params = FriParameters {
+        log_blowup: 1,
+        log_final_poly_len: 0,
+        num_queries: 10,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 8,
+        mmcs: challenge_mmcs,
+        log_folding_factor: 3,
+    };
+
+    let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
+    let challenger = Challenger::new(perm);
+
+    println!("Testing FRI with arity 8");
+    do_test_fri_pcs(&(pcs, challenger), &[&[9]]);
+}

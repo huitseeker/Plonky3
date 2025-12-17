@@ -45,15 +45,15 @@ use crate::{FriFoldingStrategy, FriParameters, FriProof, prover};
 /// proof to show that the evaluations of `(f(x) - f(z))/(x - z)` over
 /// `gH` are low degree.
 #[derive(Debug)]
-pub struct TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs> {
+pub struct TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, const NUM_SIBLINGS: usize = 1> {
     pub(crate) dft: Dft,
     pub(crate) mmcs: InputMmcs,
-    pub(crate) fri: FriParameters<FriMmcs>,
+    pub(crate) fri: FriParameters<FriMmcs, NUM_SIBLINGS>,
     _phantom: PhantomData<Val>,
 }
 
-impl<Val, Dft, InputMmcs, FriMmcs> TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs> {
-    pub const fn new(dft: Dft, mmcs: InputMmcs, fri: FriParameters<FriMmcs>) -> Self {
+impl<Val, Dft, InputMmcs, FriMmcs, const NUM_SIBLINGS: usize> TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, NUM_SIBLINGS> {
+    pub const fn new(dft: Dft, mmcs: InputMmcs, fri: FriParameters<FriMmcs, NUM_SIBLINGS>) -> Self {
         Self {
             dft,
             mmcs,
@@ -95,6 +95,19 @@ pub struct TwoAdicFriFolding<InputProof, InputError> {
 
 pub type TwoAdicFriFoldingForMmcs<F, M> =
     TwoAdicFriFolding<Vec<BatchOpening<F, M>>, <M as Mmcs<F>>::Error>;
+
+// ============================================================================
+// Type aliases for common folding arities
+// ============================================================================
+
+/// Arity-2 Two-Adic FRI PCS (default, 1 sibling per fold)
+pub type TwoAdicFriPcs2<Val, Dft, InputMmcs, FriMmcs> = TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, 1>;
+
+/// Arity-4 Two-Adic FRI PCS (3 siblings per fold)
+pub type TwoAdicFriPcs4<Val, Dft, InputMmcs, FriMmcs> = TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, 3>;
+
+/// Arity-8 Two-Adic FRI PCS (7 siblings per fold)
+pub type TwoAdicFriPcs8<Val, Dft, InputMmcs, FriMmcs> = TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, 7>;
 
 impl<F: TwoAdicField, InputProof, InputError: Debug, EF: ExtensionField<F>>
     FriFoldingStrategy<F, EF> for TwoAdicFriFolding<InputProof, InputError>
@@ -291,8 +304,8 @@ impl<InputProof, InputError: Debug> TwoAdicFriFolding<InputProof, InputError> {
     }
 }
 
-impl<Val, Dft, InputMmcs, FriMmcs, Challenge, Challenger> Pcs<Challenge, Challenger>
-    for TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs>
+impl<Val, Dft, InputMmcs, FriMmcs, Challenge, Challenger, const NUM_SIBLINGS: usize> Pcs<Challenge, Challenger>
+    for TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, NUM_SIBLINGS>
 where
     Val: TwoAdicField,
     Dft: TwoAdicSubgroupDft<Val>,
@@ -306,7 +319,7 @@ where
     type Commitment = InputMmcs::Commitment;
     type ProverData = InputMmcs::ProverData<RowMajorMatrix<Val>>;
     type EvaluationsOnDomain<'a> = BitReversedMatrixView<RowMajorMatrixView<'a, Val>>;
-    type Proof = FriProof<Challenge, FriMmcs, Val, Vec<BatchOpening<Val, InputMmcs>>>;
+    type Proof = FriProof<Challenge, FriMmcs, Val, Vec<BatchOpening<Val, InputMmcs>>, NUM_SIBLINGS>;
     type Error = FriError<FriMmcs::Error, InputMmcs::Error>;
     const ZK: bool = false;
 
