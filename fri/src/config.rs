@@ -4,6 +4,12 @@ use core::fmt::Debug;
 use p3_field::{ExtensionField, Field};
 use p3_matrix::Matrix;
 
+/// Computes log2(num_siblings + 1) at compile time.
+/// Given NUM_SIBLINGS = 2^log_folding_factor - 1, this recovers log_folding_factor.
+const fn log_folding_factor_from_siblings(num_siblings: usize) -> usize {
+    (num_siblings + 1).trailing_zeros() as usize
+}
+
 /// A set of parameters defining a specific instance of the FRI protocol.
 ///
 /// The const generic NUM_SIBLINGS specifies the number of sibling values in query proofs:
@@ -25,9 +31,6 @@ pub struct FriParameters<M, const NUM_SIBLINGS: usize = 1> {
     /// Number of bits for the PoW phase before sampling the queries.
     pub query_proof_of_work_bits: usize,
     pub mmcs: M,
-    /// Log of the folding factor (arity). Stored as runtime value for calculations.
-    /// Must satisfy: 2^log_folding_factor - 1 == NUM_SIBLINGS
-    pub log_folding_factor: usize,
 }
 
 impl<M, const NUM_SIBLINGS: usize> FriParameters<M, NUM_SIBLINGS> {
@@ -39,8 +42,12 @@ impl<M, const NUM_SIBLINGS: usize> FriParameters<M, NUM_SIBLINGS> {
         1 << self.log_final_poly_len
     }
 
+    pub const fn log_folding_factor(&self) -> usize {
+        log_folding_factor_from_siblings(NUM_SIBLINGS)
+    }
+
     pub const fn folding_factor(&self) -> usize {
-        1 << self.log_folding_factor
+        1 << self.log_folding_factor()
     }
 
     /// Returns the soundness bits of this FRI instance based on the
@@ -96,7 +103,6 @@ pub const fn create_test_fri_params<Mmcs>(
         commit_proof_of_work_bits: 1,
         query_proof_of_work_bits: 1,
         mmcs,
-        log_folding_factor: 1,
     }
 }
 
@@ -111,7 +117,6 @@ pub const fn create_test_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs, 
         commit_proof_of_work_bits: 1,
         query_proof_of_work_bits: 1,
         mmcs,
-        log_folding_factor: 1,
     }
 }
 
@@ -126,7 +131,6 @@ pub const fn create_benchmark_fri_params<Mmcs>(mmcs: Mmcs) -> FriParameters<Mmcs
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 16,
         mmcs,
-        log_folding_factor: 1,
     }
 }
 
@@ -141,7 +145,6 @@ pub const fn create_benchmark_fri_params_zk<Mmcs>(mmcs: Mmcs) -> FriParameters<M
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 16,
         mmcs,
-        log_folding_factor: 1,
     }
 }
 

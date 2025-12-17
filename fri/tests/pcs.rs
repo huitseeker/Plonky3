@@ -183,7 +183,6 @@ mod babybear_fri_pcs {
             commit_proof_of_work_bits: 0,
             query_proof_of_work_bits: 8,
             mmcs: challenge_mmcs,
-            log_folding_factor: 1,
         };
 
         let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
@@ -238,7 +237,6 @@ mod m31_fri_pcs {
             commit_proof_of_work_bits: 0,
             query_proof_of_work_bits: 8,
             mmcs: challenge_mmcs,
-            log_folding_factor: 1,
         };
         let pcs = Pcs {
             mmcs: val_mmcs,
@@ -295,7 +293,6 @@ fn test_fri_pcs_flexible_folding_arity2() {
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 8,
         mmcs: challenge_mmcs,
-        log_folding_factor: 1,
     };
 
     let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
@@ -337,14 +334,13 @@ fn test_fri_pcs_flexible_folding_arity4() {
     let val_mmcs = ValMmcs::new(hash.clone(), compress.clone());
     let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
 
-    let fri_params = FriParameters {
+    let fri_params: FriParameters<_, 3> = FriParameters {
         log_blowup: 1,
         log_final_poly_len: 0,
         num_queries: 10,
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 8,
         mmcs: challenge_mmcs,
-        log_folding_factor: 2,
     };
 
     let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);
@@ -386,14 +382,13 @@ fn test_fri_pcs_flexible_folding_arity8() {
     let val_mmcs = ValMmcs::new(hash.clone(), compress.clone());
     let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
 
-    let fri_params = FriParameters {
+    let fri_params: FriParameters<_, 7> = FriParameters {
         log_blowup: 1,
         log_final_poly_len: 0,
         num_queries: 10,
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 8,
         mmcs: challenge_mmcs,
-        log_folding_factor: 3,
     };
 
     let pcs = MyPcs::new(Dft::default(), val_mmcs, fri_params);

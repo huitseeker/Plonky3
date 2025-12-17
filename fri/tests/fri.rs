@@ -38,7 +38,6 @@ fn get_ldt_for_testing<R: Rng>(rng: &mut R, log_final_poly_len: usize) -> (Perm,
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 8,
         mmcs: fri_mmcs,
-        log_folding_factor: 1,
     };
     let dft = Radix2Dit::default();
     let pcs = MyPcs::new(dft, input_mmcs, fri_params);

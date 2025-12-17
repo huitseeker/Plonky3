@@ -88,13 +88,80 @@ pub type CommitmentWithOpeningPoints<Challenge, Commitment, Domain> = (
     )>,
 );
 
-pub struct TwoAdicFriFolding<InputProof, InputError> {
-    log_folding_factor: usize,
+pub struct TwoAdicFriFolding<InputProof, InputError, const LOG_FOLDING_FACTOR: usize> {
     _phantom: PhantomData<(InputProof, InputError)>,
 }
 
-pub type TwoAdicFriFoldingForMmcs<F, M> =
-    TwoAdicFriFolding<Vec<BatchOpening<F, M>>, <M as Mmcs<F>>::Error>;
+pub type TwoAdicFriFoldingForMmcs<F, M, const LOG_FOLDING_FACTOR: usize> =
+    TwoAdicFriFolding<Vec<BatchOpening<F, M>>, <M as Mmcs<F>>::Error, LOG_FOLDING_FACTOR>;
+
+/// Enum wrapper to allow dynamic dispatch over different folding factors while preserving monomorphization.
+pub enum TwoAdicFriFoldingEnum<InputProof, InputError: Debug> {
+    Arity2(TwoAdicFriFolding<InputProof, InputError, 1>),
+    Arity4(TwoAdicFriFolding<InputProof, InputError, 2>),
+    Arity8(TwoAdicFriFolding<InputProof, InputError, 3>),
+}
+
+impl<F: TwoAdicField, EF: ExtensionField<F>, InputProof, InputError: Debug>
+    FriFoldingStrategy<F, EF> for TwoAdicFriFoldingEnum<InputProof, InputError>
+where
+    TwoAdicFriFolding<InputProof, InputError, 1>: FriFoldingStrategy<F, EF, InputProof = InputProof, InputError = InputError>,
+    TwoAdicFriFolding<InputProof, InputError, 2>: FriFoldingStrategy<F, EF, InputProof = InputProof, InputError = InputError>,
+    TwoAdicFriFolding<InputProof, InputError, 3>: FriFoldingStrategy<F, EF, InputProof = InputProof, InputError = InputError>,
+{
+    type InputProof = InputProof;
+    type InputError = InputError;
+
+    fn extra_query_index_bits(&self) -> usize {
+        match self {
+            TwoAdicFriFoldingEnum::Arity2(f) => f.extra_query_index_bits(),
+            TwoAdicFriFoldingEnum::Arity4(f) => f.extra_query_index_bits(),
+            TwoAdicFriFoldingEnum::Arity8(f) => f.extra_query_index_bits(),
+        }
+    }
+
+    fn log_folding_factor(&self) -> usize {
+        match self {
+            TwoAdicFriFoldingEnum::Arity2(f) => f.log_folding_factor(),
+            TwoAdicFriFoldingEnum::Arity4(f) => f.log_folding_factor(),
+            TwoAdicFriFoldingEnum::Arity8(f) => f.log_folding_factor(),
+        }
+    }
+
+    fn fold_row(
+        &self,
+        index: usize,
+        log_height: usize,
+        beta: EF,
+        evals: impl Iterator<Item = EF>,
+    ) -> EF {
+        match self {
+            TwoAdicFriFoldingEnum::Arity2(f) => f.fold_row(index, log_height, beta, evals),
+            TwoAdicFriFoldingEnum::Arity4(f) => f.fold_row(index, log_height, beta, evals),
+            TwoAdicFriFoldingEnum::Arity8(f) => f.fold_row(index, log_height, beta, evals),
+        }
+    }
+
+    fn fold_matrix<M: Matrix<EF>>(&self, beta: EF, m: M) -> Vec<EF> {
+        match self {
+            TwoAdicFriFoldingEnum::Arity2(f) => f.fold_matrix(beta, m),
+            TwoAdicFriFoldingEnum::Arity4(f) => f.fold_matrix(beta, m),
+            TwoAdicFriFoldingEnum::Arity8(f) => f.fold_matrix(beta, m),
+        }
+    }
+}
+
+impl<InputProof, InputError: Debug> TwoAdicFriFoldingEnum<InputProof, InputError> {
+    /// Create a folding strategy from runtime log_folding_factor value.
+    pub fn from_log_folding_factor(log_folding_factor: usize) -> Self {
+        match log_folding_factor {
+            1 => TwoAdicFriFoldingEnum::Arity2(TwoAdicFriFolding::new()),
+            2 => TwoAdicFriFoldingEnum::Arity4(TwoAdicFriFolding::new()),
+            3 => TwoAdicFriFoldingEnum::Arity8(TwoAdicFriFolding::new()),
+            _ => panic!("Unsupported log_folding_factor: {}", log_folding_factor),
+        }
+    }
+}
 
 // ============================================================================
 // Type aliases for common folding arities
@@ -109,8 +176,8 @@ pub type TwoAdicFriPcs4<Val, Dft, InputMmcs, FriMmcs> = TwoAdicFriPcs<Val, Dft, 
 /// Arity-8 Two-Adic FRI PCS (7 siblings per fold)
 pub type TwoAdicFriPcs8<Val, Dft, InputMmcs, FriMmcs> = TwoAdicFriPcs<Val, Dft, InputMmcs, FriMmcs, 7>;
 
-impl<F: TwoAdicField, InputProof, InputError: Debug, EF: ExtensionField<F>>
-    FriFoldingStrategy<F, EF> for TwoAdicFriFolding<InputProof, InputError>
+impl<F: TwoAdicField, InputProof, InputError: Debug, EF: ExtensionField<F>, const LOG_FOLDING_FACTOR: usize>
+    FriFoldingStrategy<F, EF> for TwoAdicFriFolding<InputProof, InputError, LOG_FOLDING_FACTOR>
 {
     type InputProof = InputProof;
     type InputError = InputError;
@@ -120,7 +187,7 @@ impl<F: TwoAdicField, InputProof, InputError: Debug, EF: ExtensionField<F>>
     }
 
     fn log_folding_factor(&self) -> usize {
-        self.log_folding_factor
+        LOG_FOLDING_FACTOR
     }
 
     fn fold_row(
@@ -130,32 +197,32 @@ impl<F: TwoAdicField, InputProof, InputError: Debug, EF: ExtensionField<F>>
         beta: EF,
         evals: impl Iterator<Item = EF>,
     ) -> EF {
-        let folding_factor = 1 << self.log_folding_factor;
-        if folding_factor == 2 {
+        if LOG_FOLDING_FACTOR == 1 {
             self.fold_row_2(index, log_height, beta, evals)
         } else {
+            let folding_factor = 1 << LOG_FOLDING_FACTOR;
             self.fold_row_arbitrary(index, log_height, beta, evals, folding_factor)
         }
     }
 
     fn fold_matrix<M: Matrix<EF>>(&self, beta: EF, m: M) -> Vec<EF> {
-        let folding_factor = 1 << self.log_folding_factor;
-        if folding_factor == 2 {
+        if LOG_FOLDING_FACTOR == 1 {
             self.fold_matrix_2(beta, &m)
         } else {
+            let folding_factor = 1 << LOG_FOLDING_FACTOR;
             self.fold_matrix_arbitrary(beta, &m, folding_factor)
         }
     }
 }
 
-impl<InputProof, InputError: Debug> TwoAdicFriFolding<InputProof, InputError> {
-    pub fn new(log_folding_factor: usize) -> Self {
-        assert!(log_folding_factor > 0);
+impl<InputProof, InputError: Debug, const LOG_FOLDING_FACTOR: usize> TwoAdicFriFolding<InputProof, InputError, LOG_FOLDING_FACTOR> {
+    pub const fn new() -> Self {
+        assert!(LOG_FOLDING_FACTOR > 0);
         Self {
-            log_folding_factor,
             _phantom: PhantomData,
         }
     }
+
 
     fn fold_row_2<EF, F>(
         &self,
@@ -646,8 +713,9 @@ where
         // low degree functions.
         let fri_input = reduced_openings.into_iter().rev().flatten().collect_vec();
 
-        let folding: TwoAdicFriFoldingForMmcs<Val, InputMmcs> =
-            TwoAdicFriFolding::new(self.fri.log_folding_factor);
+        let folding = TwoAdicFriFoldingEnum::<Vec<BatchOpening<Val, InputMmcs>>, InputMmcs::Error>::from_log_folding_factor(
+            self.fri.log_folding_factor()
+        );
 
         // Produce the FRI proof.
         let fri_proof = prover::prove_fri(
@@ -682,8 +750,9 @@ where
             }
         }
 
-        let folding: TwoAdicFriFoldingForMmcs<Val, InputMmcs> =
-            TwoAdicFriFolding::new(self.fri.log_folding_factor);
+        let folding = TwoAdicFriFoldingEnum::<Vec<BatchOpening<Val, InputMmcs>>, InputMmcs::Error>::from_log_folding_factor(
+            self.fri.log_folding_factor()
+        );
 
         verifier::verify_fri(
             &folding,

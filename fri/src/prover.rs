@@ -258,7 +258,7 @@ where
     F: Field,
     M: Mmcs<F>,
 {
-    let log_folding_factor = config.log_folding_factor;
+    let log_folding_factor = config.log_folding_factor();
     let folding_factor = config.folding_factor();
 
     folded_polynomial_commits
